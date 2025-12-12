@@ -1,0 +1,270 @@
+{
+  "entry_points": [
+    {
+      "name": "Cpg0Recent.m",
+      "purpose": "Display recent surveys added to CPG database",
+      "calls": ["load SurveyMasterListWithMops.mat", "ls -lt /volumes/group/lidar"]
+    },
+    {
+      "name": "Cpg11SASGSM.m",
+      "purpose": "Orchestrate SA, SG, SM updates sequentially",
+      "calls": ["Cpg2UpdateSAmatfiles", "Cpg3UpdateSGmatfiles", "Cpg4UpdateSMmatfiles"]
+    },
+    {
+      "name": "Cpg1MakeSurveyMasterListwithMops.m",
+      "purpose": "Add nearest Mop lists to Survey struct array; main data orchestration",
+      "calls": ["CpgDefineMopPath", "MakeSurveyMasterList", "FindNearestMopTransectsUTM"]
+    },
+    {
+      "name": "Cpg2UpdateCAmatfiles.m",
+      "purpose": "Update survey averaged (SA) mat files for all Mops",
+      "calls": ["CpgDefineMopPath", "UpdateSAsurvey", "AddSA"]
+    },
+    {
+      "name": "Cpg3UpdateSGmatfiles.m",
+      "purpose": "Update spatial grid (SG) mat files for all Mops",
+      "calls": ["CpgDefineMopPath", "AddSG", "CombineSurveyDateSourceData"]
+    },
+    {
+      "name": "Cpg4UpdateSMmatfiles.m",
+      "purpose": "Update survey morphology (SM) mat files for all Mops",
+      "calls": ["CpgDefineMopPath", "Add2SM", "GetTransectLines"]
+    },
+    {
+      "name": "CpgMopsUpdate.m",
+      "purpose": "Main workflow for adding new survey data to Mop database",
+      "calls": ["MakeSurveyMasterList", "UpdateSAsurvey", "SpatialAverageUTM", "XY2MopNumsV2"]
+    },
+    {
+      "name": "CpgMopSurveysSummary.m",
+      "purpose": "Display summary statistics of Survey struct array metadata",
+      "calls": ["load SurveyMasterListWithMops.mat"]
+    },
+    {
+      "name": "MakeSurveyMasterList.m",
+      "purpose": "Generate master list struct array of all survey files with metadata",
+      "calls": ["DefineAllDataSets", "FindTopoBathySurveys"]
+    },
+    {
+      "name": "BuildSAmatfiles.m",
+      "purpose": "Build 1m spatially averaged survey (SA) struct files from raw survey data",
+      "calls": ["readSurveyFileUTM", "SpatialAverageUTM"]
+    },
+    {
+      "name": "BuildSGmatfiles.m",
+      "purpose": "Build spatial grid (SG) struct files using SA data with interpolation",
+      "calls": ["CombineSurveyDateSourceData", "AlongshoreGrid", "UTMalongshoreGrid"]
+    },
+    {
+      "name": "BuildSMmatfiles.m",
+      "purpose": "Build survey morphology (SM) struct files with profile metrics from SG",
+      "calls": ["GetTransectLines", "GetNearestPointsProfiles", "SM2sandbar"]
+    },
+    {
+      "name": "AddSA.m",
+      "purpose": "Add new survey entries to existing SA mop files",
+      "calls": ["UpdateSAsurvey", "readSurveyFileUTM2"]
+    },
+    {
+      "name": "AddSG.m",
+      "purpose": "Add new survey entries to existing SG mop files",
+      "calls": ["CombineSurveyDateSourceData", "AlongshoreGrid"]
+    },
+    {
+      "name": "Add2SM.m",
+      "purpose": "Add new survey entries to existing SM mop files",
+      "calls": ["GetTransectLines", "GetNearestPointsProfiles"]
+    },
+    {
+      "name": "UpdateiG8wheel.m",
+      "purpose": "Update iG8wheel subaerial survey data workflow",
+      "calls": ["UpdateiG8wheelSAmatfiles", "AddLatestSGmatfiles", "BuildSMmatfiles"]
+    },
+    {
+      "name": "PlotLatestSurveyProfiles.m",
+      "purpose": "Plot latest survey profiles for a Mop with optional filtering",
+      "calls": ["GetTransectLines", "pdist2"]
+    },
+    {
+      "name": "EulerianAnomaly.m",
+      "purpose": "Calculate elevation anomalies relative to global mean profiles",
+      "calls": ["GetTransectLines", "intersections", "SMtoShoreline"]
+    }
+  ],
+  "data_structures": {
+    "SA": "Survey Averaged (1m spatial resolution) struct array containing spatially-averaged survey point data (x,y,z elevation in UTM coords, substrate classification). One element per survey date. Fields: .File, .Datenum, .Source, .X, .Y, .Z, .Class, .Mopnum, .Bytes",
+    "SG": "Spatial Grid (interpolated survey) struct array containing gridded elevation data on 1m UTM grid for each survey. Bridges SA raw points to SM transect-based profiles. Fields: .File, .Datenum, .Source, .X, .Y, .Z, .Class, .Mopnum, similar to SA but gridded",
+    "SM": "Survey Morphology (profile-based) struct array containing cross-shore transect profiles and morphometric parameters extracted from SG grids. Fields: .X1D (xshore distance), .Z1Dtransect, .Z1Dmean, .Z1Dmedian, .Datenum, .Source, .File, .Mopnum, plus computed metrics like beach widths, slopes, volumes",
+    "Survey": "Master survey metadata struct array with global survey inventory. Fields: .File (full path), .Datenum (survey date), .Source (survey type: Gps, UTAir, Trk, TrkMR, AtvMR, DrnMR, USACE, CCC, USGS, KMair, iG8wheel, RTKdrone, etc), .Type, .Year, .Month, .Day, .MopStart, .MopEnd, .NearestMops (list of mops with data in file), .FileDatenum (file creation date), .Bytes",
+    "GM": "Global Mean struct containing statistics over all surveys for a Mop. Fields: .Mopnum, .X2D, .Y2D (global grid UTM coords), .Z2Dmin, .Z2Dmax, .Z2Dmean (mean elevation grid), .Z2Dclass (max substrate class), .XY2Dnum (count of surveys per grid point)",
+    "Mop": "Mop transect metadata table array with geometric information for all ~11594 Mop points. Fields: .Name, .XYutm (center coords), .BackXutm, .BackYutm (back beach/land point), .OffXutm, .OffYutm (offshore point), .Normal (orientation), .UTMzone. Defines the transect lines used for cross-shore analysis",
+    "DataSets": "Configuration struct array defining file path patterns and source types for different survey data sources (GPS, LiDAR, etc). Used to discover and classify survey files automatically."
+  },
+  "functional_categories": {
+    "data_i_o": [
+      "readSurveyFileUTM.m - Read survey data with support for GPS (llz), LiDAR (tif), various formats with classification and optional time columns",
+      "readSurveyFileUTM2.m - Enhanced survey file reader with UTM zone detection and error handling",
+      "CheckForGpsSurveyFiles.m - Scan for new GPS survey files in topobathy directory tree",
+      "CheckForTrkSurveyFiles.m - Scan for new Truck LiDAR survey files",
+      "FindTopoBathySurveys.m - Discover all topobathy survey files in database",
+      "DefineAllDataSets.m - Configure data source definitions (GPS, UTAir, Truck LiDAR, Shoals, CCC, USGS, KMair, iG8wheel, RTKdrone, Norbit Multibeam, etc)",
+      "DefineMopPath.m - Set Mop folder path for local/mounted storage",
+      "CpgDefineMopPath.m - CPG-specific Mop path configuration",
+      "SingleSurvey2SA.m - Convert raw single survey file to SA struct format",
+      "Survey2SA.m - Bulk conversion of survey files to SA struct format"
+    ],
+    "data_aggregation": [
+      "MakeSurveyMasterList.m - Generate master list of all surveys with metadata",
+      "Cpg1MakeSurveyMasterListwithMops.m - Add nearest Mop information to Survey list",
+      "BuildSAmatfiles.m - Aggregate raw survey points to 1m spatial averages per Mop per date",
+      "BuildSGmatfiles.m - Create gridded survey data from SA points with multi-mop interpolation",
+      "BuildSMmatfiles.m - Extract cross-shore profiles and morphometrics from SG grids",
+      "CombineSurveyDateSourceData.m - Merge airborne surveys with same date/source from adjacent passes",
+      "CombineSGdata.m - Combine SG files from multiple Mops into single grid",
+      "SAcombineMops.m - Combine SA struct arrays across Mop range",
+      "SGcombineMops.m - Combine SG struct arrays across Mop range",
+      "UTMalongshoreGrid.m - Transform survey points to alongshore-cross-shore grid",
+      "AlongshoreGrid.m - Create alongshore gridding from Mop-transect coordinates",
+      "AddLatestSGmatfiles.m - Append new surveys to existing SG files",
+      "AddLatestSMmatfiles.m - Append new surveys to existing SM files",
+      "AddLatestSGmatfilesCart.m - Add Cartesian-coord SG files"
+    ],
+    "plotting": [
+      "PlotLatestSurveyProfiles.m - Plot cross-shore profiles with recent survey data",
+      "PlotMopTransectUTM.m - Plot Mop transect line on map",
+      "PlotLabelMopTransect.m - Add labels to Mop transect plots",
+      "PlotLabelMopTransectUTM.m - Add UTM labels to Mop transect plots",
+      "PlotCMstruct.m - Generic 3D scatter plot of survey data in struct",
+      "ColorScatter.m - Color-coded 3D scatter plot of elevation data",
+      "ColorScatter2d.m - 2D color scatter plot",
+      "ColorScatterProfile.m - Color-coded scatter plot along profile",
+      "ColorScatterPolarmap.m - Polar color mapping for scatter plots",
+      "RoughnessColorScatter.m - Color scatter plot for roughness/std dev data",
+      "RoughnessColorScatter2D.m - 2D roughness scatter plot",
+      "ScatterPlotBeachUTM.m - Scatter plot of beach elevation data",
+      "ScatterPlotBeachBarUTM.m - Scatter plot of beach bar features",
+      "ScatterPlotSubaqueous.m - Scatter plot of subaqueous zone data",
+      "ScatterPlotSubaqueousUTM.m - UTM-based subaqueous scatter plot",
+      "ScatterPlotSubaqueousUTMdetail.m - Detailed subaqueous scatter",
+      "PlotSGgridSAdata.m - Overlay SA points on SG grid visualization",
+      "PlotShoals.m - Plot SHOALS survey data",
+      "PlotShoalsDataOnMap.m - Map-based SHOALS data visualization",
+      "PlotMopShoreline.m - Plot shoreline time series for Mop",
+      "SandbarTracker.m - Visualize sandbar feature migration and detrending"
+    ],
+    "quality_control": [
+      "ElevGoodnessQCv1.m - QC method assigning elevation goodness scores based on histogram distribution across elevation bands",
+      "ExampleTruckTifQC.m - QC workflow for Truck LiDAR tif files",
+      "ExampleTruckTifQCv2.m - Enhanced Truck LiDAR QC with visualization",
+      "SurveySpecialQC.m - Custom QC checks for specific surveys",
+      "EulerianAnomalyMovie.m - Generate movies of QC'd elevation anomalies",
+      "CheckSGjumbos.m - Validate jumbo (high-frequency survey) SG gridded data",
+      "ListSA.m - List and inspect SA struct array contents",
+      "ListSGjumbos.m - List jumbo survey entries in SG arrays",
+      "CompareMasterLists.m - Compare different versions of Survey master list",
+      "CheckForGpsSurveyFiles.m - Validate GPS survey file discovery",
+      "CheckForTrkSurveyFiles.m - Validate Truck LiDAR file discovery"
+    ],
+    "core_physics": [
+      "GetShoreface.m - Calculate shoreface volume, centroid, slope metrics from profile",
+      "GetProfileMedianRoughness.m - Extract surface roughness (std dev) from gridded surveys",
+      "GetMopShoalsRoughness.m - Calculate roughness for SHOALS survey data",
+      "GetMopShoalsRoughnessV2.m - Enhanced roughness calculation with windowing options",
+      "FindShoalsRoughness.m - Process SHOALS data for roughness analysis",
+      "FindMopShoalsRoughness.m - Extract roughness for specific Mop from SHOALS",
+      "GetNearestPointsProfile.m - Extract profile from nearest survey points (non-interpolated)",
+      "GetAllNearestPointsProfile.m - Get all profiles using nearest-point method",
+      "GetAllNearestPointsProfiles.m - Multi-profile nearest-point extraction",
+      "GetAllMeanNearestPointsProfiles.m - Calculate mean profile from nearest points",
+      "GetNearestPointsProfiles.m - Extract multiple profiles via nearest points",
+      "GetNonGriddedProfile.m - Get profile without interpolation from raw SA points",
+      "GetSAprofile.m - Extract profile from SA struct in xshore coordinates",
+      "SG2grid.m - Extract 2D grid array from SG struct",
+      "SM2sandbar.m - Identify and track sandbar elevation features in SM profiles",
+      "SM2CP.m - Convert SM profiles to coastal profile (CP) struct",
+      "ContourTracker.m - Track elevation contour migration through time",
+      "SMtoShoreline.m - Extract shoreline positions at specified elevations",
+      "GetMSLshoreline.m - Extract Mean Sea Level shoreline locations"
+    ],
+    "utilities": [
+      "deg2utm.m - Convert latitude/longitude to UTM coordinates (WGS84)",
+      "utm2deg.m - Convert UTM coordinates to latitude/longitude",
+      "degutm.m - WGS84 datum conversion utilities",
+      "UTM2MopCoords.m - Transform UTM to Mop fractional/xshore coordinates",
+      "Mop2UTMcoords.m - Transform Mop coordinates to UTM",
+      "UTM2MopxshoreX.m - Convert UTM point to nearest Mop xshore distance",
+      "LatLon2MopxshoreX.m - Direct lat/lon to Mop xshore conversion",
+      "LatLon2MopFractionXshoreX.m - Lat/lon to fractional Mop and xshore",
+      "MopxshoreX2LatLonUTM.m - Inverse conversion from Mop coords to lat/lon/UTM",
+      "ShoreBox2utm.m - ShoreBox local coordinates to UTM",
+      "utm2ShoreBox.m - UTM to ShoreBox local coordinates",
+      "ShoreBox2deg.m - ShoreBox to lat/lon",
+      "deg2ShoreBox.m - Lat/lon to ShoreBox",
+      "XY2MopNumsV2.m - Find Mop numbers from UTM x,y points",
+      "XY2MopNumsV3.m - Enhanced Mop number finder",
+      "FindNearestMopTransectsUTM.m - Locate nearest Mop transect to UTM point",
+      "GetTransectLines.m - Generate Mop subtransect lines for cross-shore analysis",
+      "intersections.m - Find curve intersections (for shoreline detection at elevations)",
+      "linfit.m - Linear regression fitting",
+      "gapsize.m - Identify gaps in data arrays",
+      "EqualSpacedPoints.m - Generate equally-spaced marker points",
+      "point_to_line.m - Calculate perpendicular distance from point to line",
+      "SpatialAverageUTM.m - Bin and average survey data to spatial resolution grid",
+      "gettide.m - Fetch NOAA tide predictions",
+      "getwaves.m - Fetch CDIP wave forecast data",
+      "getztide.m - Calculate tide stage for elevation",
+      "getztide2.m - Enhanced tide calculations",
+      "polarmap.m - Polar colormap for directional data",
+      "MonthColormap.m - Monthly color progression colormap",
+      "BeachColorbar.m - Beach elevation colormap",
+      "BeachBarColorbar.m - Beach bar feature colormap",
+      "BeachColorMap.mat - Saved beach colormap",
+      "BeachBarColorMap.mat - Saved beach bar colormap"
+    ],
+    "examples": [
+      "ExampleAlongshoreInterp.m - Demonstrate alongshore interpolation workflow",
+      "ExampleBlendElevationGrids.m - Combine/blend multiple elevation grids",
+      "ExampleCFutm2Mop.m - Example CF (coastal features) to Mop conversion",
+      "ExampleCardiffErosion.m - Case study: Cardiff erosion analysis",
+      "ExampleDataSources.m - Demonstrate survey data source discovery",
+      "ExampleGetCpgMopsBeachWidths.m - Calculate time series of beach widths",
+      "ExampleGetFractionalSGtransect.m - Extract fractional transect from SG",
+      "ExampleGetVos.m - Load and process Vos (CoastSat) shoreline data",
+      "ExampleLatLon2MopxshoreX.m - Example coordinate transformation",
+      "ExampleLiDARNearestPointProfiles.m - LiDAR profile extraction",
+      "ExampleLidarNearestProfiles.m - Nearest-point profile examples",
+      "ExampleMopBeachSlopeTimeSeries.m - Analyze beach slope temporal variations",
+      "ExampleMopSA2beachWidth.m - Calculate beach width from SA data",
+      "ExampleMopSeasonalBeachSlopes.m - Seasonal slope analysis",
+      "ExampleMopShallowRoughness.m - Calculate shallow-water roughness",
+      "ExampleMopSlopeSineFits.m - Fit sinusoidal functions to beach slopes",
+      "ExampleMopSubtransectProfiles.m - Profile analysis at subtransect scale",
+      "ExampleMopXmhwVsBeachSlope.m - Relate MHW shoreline to beach slope",
+      "ExampleNearestPointProfileMetrics.m - Extract metrics from nearest-point profiles",
+      "ExampleNearestPointProfiles.m - Generate nearest-point profiles",
+      "ExampleNearestPointSurveyProfiles.m - Survey-specific profile extraction",
+      "ExampleNonInterpolatedProfile.m - Non-interpolated profile analysis",
+      "ExampleOsideNearestPointProfiles.m - Oceanside case study",
+      "ExamplePlotCardiffAnnualMeanMHWwidth.m - Cardiff annual beach width",
+      "ExamplePlotCombinedJumboSGelevationChange.m - Multi-jumbo elevation change visualization",
+      "ExamplePlotJumboSGgrid.m - Single jumbo SG grid visualization",
+      "ExamplePlotMopShoreline.m - Mop shoreline time series",
+      "ExamplePlotReachJetskiVolumeEvolution.m - Jetski survey volume evolution",
+      "ExamplePlotSandVolumeSIO.m - SIO region sand volume changes",
+      "ExamplePlotSfMSurveyProfiles.m - Structure-from-motion profile analysis",
+      "ExampleProfileAnalysis.m - General profile analysis workflow",
+      "ExampleProfileTool.m - Interactive profile analysis tool",
+      "ExampleQC.m - Quality control demonstration",
+      "ExampleRoughnessProfile.m - Roughness profile analysis",
+      "ExampleRoughnessShoalsComparison.m - Compare roughness across data sources",
+      "ExampleSGcode.m - Demonstration of SG struct array usage",
+      "ExampleSMcode.m - Demonstration of SM struct array usage",
+      "ExampleSubstrateComparison.m - Compare substrate classification across surveys",
+      "ExampleSurveyVsVosPlots.m - Compare CPG surveys with CoastSat/Vos data",
+      "ExampleTrkNearestPointSurveyProfiles.m - Truck LiDAR profile extraction",
+      "ExampleXYZnearestProfile.m - Generic xyz to profile conversion",
+      "ExampleXshoreVolumeChangeDensityPlot.m - Density plots of volume change",
+      "ExampleUTM2MopxshoreX.m - UTM to Mop coordinate conversion"
+    ]
+  }
+}
