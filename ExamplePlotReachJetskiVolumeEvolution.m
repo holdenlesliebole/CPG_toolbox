@@ -17,12 +17,12 @@ mpath='/volumes/group/MOPS/'; % reefbreak on a mac
 
 % 2. Mop range to use in volume change calculations
 %MopStart=668;MopEnd=682; % start and mop numbers for Cardiff
-MopStart=570;MopEnd=590; % start and mop numbers for north TP
+MopStart=576;MopEnd=590; % start and mop numbers for north TP
 
 % 3. Date range to consider. The first and last dates to not
 %    have to match survey dates precisely
-StartDate=datenum(2022,8,1);%datenum(2010,11,22);
-EndDate=datenum(today);%datenum(2011,3,10);
+StartDate=datenum(1998,1,1);%datenum(2010,11,22);
+EndDate=datenum(2026,1,31);%datenum(today);%datenum(2011,3,10);
 
 % 4. Elevation bin sizes (m) to use when calculating volume change as 
 %    a function of the starting survey grid elevations. Larger
@@ -33,6 +33,9 @@ zRes=0.5; % 10 cm
 % Used to normalize first moment of the seaward deposition distribution
 L=100*(MopEnd-MopStart+1);
 
+% Cross-shore width will be calculated from the grid extent
+% (computed below after loading data)
+
 %% load the combined SG gridded mat file data.  Return the combined
 %  data to a struct array SG instead of CG to use the normal 
 %  single mop SG gridding and plotting code with the combined data.
@@ -40,7 +43,7 @@ SG=CombineSGdata(mpath,MopStart,MopEnd);
 
 %% identify jumbos with jetskis by checking the original survey file names for the 
 %  word jumbo
-jumbo=find(contains({SG.File},'umbo'));
+jumbo=find(contains({SG.File},'umbo') | contains({SG.File},'etski'));
 % find jumbo surveys with jetski data
 m=0;
 jetski=[];
@@ -73,6 +76,9 @@ maxy=max(vertcat(SG.Y));
 % 2d UTM grid indice matrices
 [X,Y]=meshgrid(minx:maxx,miny:maxy);
 
+% Calculate cross-shore width (for normalizing first moment)
+W = maxx - minx;
+
 %% Z0 is a grid of the first survey in the date range. All grid
 %  changes will be calculated relative to this reference grid.
 SurvNum=jetski(1); 
@@ -94,6 +100,15 @@ z0bin=round((Z0-0.774)/zRes);
 
 figure('position',[ 21          56        1385         728]);
 col=jet(length(jetski)-1);
+
+% Pre-allocate arrays to store SSD values and dates for derivative calculation
+ssd_vals = zeros(1, length(jetski));
+survey_dates = zeros(1, length(jetski));
+
+% First survey (reference)
+ssd_vals(1) = 0;
+survey_dates(1) = SG(jetski(1)).Datenum;
+
 for n=2:length(jetski)
     
    SurvNum=jetski(n); 
@@ -117,31 +132,57 @@ for n=2:length(jetski)
     % loop through the Z0 reference grid elevation bins
     for iz=min(z0bin(:)):max(z0bin(:))
       m=m+1;
-      % net volume change "density" in the elevation bin
+      % net volume change "density" in the elevation bin (for plotting)
       dv(m)=sum(dz(z0bin==iz),'omitnan')/zRes;
-      % add to first moment
-      if(iz < 0 && dv(m) > 0) mu=mu+dv(m)*iz*zRes;end
+      % add to first moment (use raw volume sum, not density)
+      % includes all volume changes at subaqueous elevations (deposition and erosion)
+      dv_raw=sum(dz(z0bin==iz),'omitnan');
+      if(iz < 0) mu=mu+dv_raw*iz*zRes;end
     end
-    % normalize by mop range alongshore distance, so results for
-    % different coastal reaches can be compared
-    mu=round(-mu/L); 
+    % normalize by area (alongshore L and cross-shore W) to get equivalent depth
+    mu=round(-mu/(L*W), 4); 
+    
+    % Store SSD value and date for derivative calculation
+    ssd_vals(n) = mu;
+    survey_dates(n) = SG(jetski(n)).Datenum;
+    
     % plot results
-    fprintf('%s\n',[datestr(SG(jetski(n)).Datenum) '  \mu_{SSD} = ' num2str(mu)])
-    plot((min(z0bin(:)):max(z0bin(:)))*zRes,dv/1000,'.-','color',col(n-1,:),...
-    'markersize',15,'DisplayName',...
-    [datestr(SG(jetski(n)).Datenum) '  \mu_{SSD} = ' num2str(mu)] ,'linewidth',2);hold on
+    fprintf('%s\n',[datestr(SG(jetski(n)).Datenum) '  Seaward Sand Deposition (SSD) = ' num2str(mu) ' m'])
+    plot((min(z0bin(:)):max(z0bin(:)))*zRes,dv/1000,'-','color',col(n-1,:),...
+    'DisplayName',...
+    [datestr(SG(jetski(n)).Datenum) '  SSD = ' num2str(mu) ' m'] ,'linewidth',2);hold on
 end
-grid on;
-legend('numcolumns',2,'Location','eastoutside')
-set(gca,'xtick',min(z0bin(:)):max(z0bin(:))*zRes,'xlim',[min(z0bin(:)) max(z0bin(:))]*zRes);
-xlabel([ datestr(SG(jetski(1)).Datenum) ' Nearshore Elevation, Z_o (m, MSL)']);
-ylabel('Net Volume Change Density (m^{3} x 1000 / dZ_o )');
-set(gca,'fontsize',14);
-title(['Net Cross-shore Volume Change since ' datestr(SG(jetski(1)).Datenum)...
-    ' : Mops ' num2str(MopStart) ' to ' num2str(MopEnd)],'fontsize',18)
-set(gca,'position',[0.1300    0.4100    0.7750 0.5150])
 
-%% add wave Hs time series as 2nd axes
+% Add horizontal line at zero for first survey date
+xlim_vals = [min(z0bin(:)) max(z0bin(:))]*zRes;
+plot(xlim_vals, [0 0], 'k-', 'linewidth', 2, 'DisplayName', [datestr(SG(jetski(1)).Datenum) ' (Reference)']);
+
+grid on;
+legend('numcolumns',1,'Location','bestoutside', 'fontsize', 11)
+set(gca,'xtick',min(z0bin(:)):max(z0bin(:))*zRes,'xlim',xlim_vals);
+xlabel([ datestr(SG(jetski(1)).Datenum) ' Nearshore Elevation, Z_o (m, MSL)'], 'fontsize', 14);
+ylabel('Net Volume Change Density (m^{3} m^{-1})', 'fontsize', 14,'interpreter','tex');
+set(gca,'fontsize',12);
+title(['Net Cross-shore Volume Change since ' datestr(SG(jetski(1)).Datenum)...
+    ' : MOPs ' num2str(MopStart) ' to ' num2str(MopEnd)],'fontsize',16)
+set(gca,'position',[0.1300    0.4100    0.65 0.5150])
+
+%% Calculate and display dSSD/dt (rate of SSD change)
+fprintf('\n\n--- Rate of Seaward Sand Deposition (dSSD/dt) ---\n')
+fprintf('Date Interval                   Days    dSSD/dt (m/day)   dSSD/dt (cm/day)\n')
+fprintf('%-34s %6s %17s %17s\n', '---', '---', '---', '---')
+
+for n=2:length(jetski)
+    dt_days = survey_dates(n) - survey_dates(n-1);
+    dssd = ssd_vals(n) - ssd_vals(n-1);
+    dssd_dt = dssd / dt_days;  % m/day
+    dssd_dt_cm = dssd_dt * 100;  % cm/day
+    
+    date_str = sprintf('%s to %s', datestr(survey_dates(n-1)), datestr(survey_dates(n)));
+    fprintf('%-34s %6.0f %17.5f %17.3f\n', date_str, dt_days, dssd_dt, dssd_dt_cm)
+end
+
+%% Add wave Hs time series as 2nd axes below FIRST figure
 
 % use Mop in middle of Cardiff for wave info
 MopNumber=580;%675;
@@ -158,13 +199,13 @@ wavetime=ncread(dsurl,'waveTime'); % read wave times
 hctime=datetime(wavetime,'ConvertFrom','posixTime');
 hchs=ncread(dsurl,'waveHs'); % read wave heights
 
-ax2=axes('position',[0.1300    0.1100    0.7750 0.2150]);
+ax_wave1=axes('position',[0.1300    0.08    0.65 0.2150]);
 
 % plot time series
 plot(hctime,hchs,'k-','linewidth',2); hold on;
 
 % just show date range of jetski surveys
-set(ax2,'xlim',[datetime(StartDate-7,'convertfrom','datenum') ...
+set(ax_wave1,'xlim',[datetime(StartDate-7,'convertfrom','datenum') ...
 datetime(EndDate+7,'convertfrom','datenum')]);
 
 % mark dates of surveys 
@@ -177,17 +218,110 @@ end
 % replot time series
 plot(hctime,hchs,'k-','linewidth',2); hold on;
 
-
-
-
-ylabel('Hs (m)')
-xlabel('Date')
-set(gca,'fontsize',14);
+ylabel('Hs (m)', 'fontsize', 14)
+xlabel('Date', 'fontsize', 14)
+set(gca,'fontsize',12);
 grid on;
-%datetick('x','mm/dd')
 
-% legend
-makepng('Torrey20222025FrequentJetskiEvolution.png')
+makepng('TBR23_VolumeEvolution_by_InitialElevation.png')
+% Instead of plotting volume change vs initial elevation, plot it vs cross-shore distance
+
+figure('position',[ 21          56        1385         728]);
+col=jet(length(jetski)-1);
+
+for n=2:length(jetski)
+    
+   SurvNum=jetski(n); 
+    % Mop area 1m gridded points with valid data for this survey
+    x=SG(SurvNum).X;
+    y=SG(SurvNum).Y;
+    % get 1d indice values of the valid x,y grid points
+    idx=sub2ind(size(X),y-miny+1,x-minx+1);
+    % initialize the 2d elevation Z0 array as NaNs
+    Z=X*NaN; 
+    % overlay the valid data point elevations using the 1d indices
+    Z(idx)=SG(SurvNum).Z; 
+    
+    % change grid relative to initial grid
+    dz=Z-Z0;
+    
+    % Extract cross-shore distance and volume change
+    x_all = X(idx);
+    dv_all = dz(idx);
+    
+    % Bin by cross-shore distance and calculate mean volume change
+    x_bins = min(x_all):5:max(x_all);  % 5m cross-shore bins
+    dv_binned = zeros(1, length(x_bins)-1);
+    x_bin_centers = zeros(1, length(x_bins)-1);
+    
+    for ib = 1:length(x_bins)-1
+        mask = x_all >= x_bins(ib) & x_all < x_bins(ib+1);
+        if sum(mask) > 0
+            dv_binned(ib) = nanmean(dv_all(mask));
+            x_bin_centers(ib) = (x_bins(ib) + x_bins(ib+1)) / 2;
+        else
+            dv_binned(ib) = NaN;
+            x_bin_centers(ib) = NaN;
+        end
+    end
+    
+    % Get first moment (SSD) for this survey
+    % includes all volume changes at subaqueous elevations (deposition and erosion)
+    z0bin_all = round((Z0-0.774)/zRes); 
+    mu=0;
+    for iz=min(z0bin_all(:)):max(z0bin_all(:))
+      dz_bin_raw=sum(dz(z0bin_all==iz),'omitnan');
+      if(iz < 0) mu=mu+dz_bin_raw*iz*zRes;end
+    end
+    mu=round(-mu/(L*W), 2);
+    
+    % plot results
+    plot(x_bin_centers, dv_binned, '-', 'color', col(n-1,:), ...
+        'DisplayName', [datestr(SG(jetski(n)).Datenum) '  SSD = ' num2str(mu) ' m'], ...
+        'linewidth', 2);
+    hold on
+end
+
+% Add horizontal line at zero for first survey date
+xlim_vals = [min(x_all) max(x_all)];
+plot(xlim_vals, [0 0], 'k-', 'linewidth', 2, 'DisplayName', [datestr(SG(jetski(1)).Datenum) ' (Reference)']);
+
+grid on;
+legend('numcolumns', 1, 'Location', 'bestoutside', 'fontsize', 11)
+set(gca, 'xlim', xlim_vals);
+xlabel('Cross-Shore Distance (m)', 'fontsize', 14);
+ylabel('Mean Elevation Change (m)', 'fontsize', 14);
+set(gca, 'fontsize', 12);
+title(['Net Elevation Change by Cross-Shore Distance since ' datestr(SG(jetski(1)).Datenum)...
+    ' : MOPs ' num2str(MopStart) ' to ' num2str(MopEnd)], 'fontsize', 16)
+set(gca, 'position', [0.1300    0.4100    0.65 0.5150])
+
+%% add wave Hs time series as 2nd axes below SECOND figure
+ax_wave2=axes('position',[0.1300    0.08    0.65 0.2150]);
+
+% plot time series
+plot(hctime,hchs,'k-','linewidth',2); hold on;
+
+% just show date range of jetski surveys
+set(ax_wave2,'xlim',[datetime(StartDate-7,'convertfrom','datenum') ...
+datetime(EndDate+7,'convertfrom','datenum')]);
+
+% mark dates of surveys 
+yl=get(gca,'ylim');
+for n=2:length(jetski)
+    x=datetime(SG(jetski(n)).Datenum,'convertfrom','datenum');
+    plot([x x],yl,'-','color',col(n-1,:),'linewidth',2); hold on;
+end
+
+% replot time series
+plot(hctime,hchs,'k-','linewidth',2); hold on;
+
+ylabel('Hs (m)', 'fontsize', 14)
+xlabel('Date', 'fontsize', 14)
+set(gca,'fontsize',12);
+grid on;
+
+makepng('TBR23_VolumeEvolution_by_CrossShoreDistance.png')
 %makepng('CardiffFrequentJetskiEvolution.png')
 
 %
