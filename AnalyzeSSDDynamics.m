@@ -17,8 +17,8 @@ mpath='/volumes/group/MOPS/'; % reefbreak on a mac
 MopStart=576;MopEnd=590; % start and mop numbers for north TP
 
 % 3. Date range to consider
-StartDate=datenum(2022,10,1);
-EndDate=datenum(2023,10,31);
+StartDate=datenum(2000,1,1);%datenum(2022,10,1);
+EndDate=datenum(2025,12,31);%datenum(2023,10,31);
 
 % 4. Elevation bin sizes (m) to use when calculating volume change
 zRes=0.5; % 0.5 m
@@ -150,48 +150,58 @@ plot(datetime(survey_dates,'convertfrom','datenum'), ssd_vals, 'o-', ...
     'linewidth', 2.5, 'markersize', 6, 'color', [0 0.4 0.8]);
 hold on
 plot(datetime(survey_dates,'convertfrom','datenum'), zeros(size(survey_dates)), 'k--', ...
-    'linewidth', 1.5, 'alpha', 0.5)
+    'linewidth', 1.5)
 grid on
-ylabel('SSD (m)', 'fontsize', 14)
-title('Seaward Sand Deposition (SSD) State Evolution', 'fontsize', 16, 'fontweight', 'bold')
+ylabel('SSD (m)', 'fontsize', 14, 'interpreter', 'tex')
+title('Seaward Sand Deposition (SSD) State Evolution', 'fontsize', 16, 'fontweight', 'bold', 'interpreter', 'tex')
 set(gca, 'fontsize', 12)
 set(ax1, 'position', [0.1 0.55 0.85 0.4])
 
 % Panel B: dSSD/dt rate of change with color coding
 ax2 = subplot(2,1,2);
 % Color code: red for offshore (positive), blue for recovery (negative)
+% Use 0.5-1.0 color scale for better visibility
 colors = zeros(length(dssd_dt_vals), 3);
+max_offshore = max(dssd_dt_vals);
+max_recovery = max(abs(dssd_dt_vals));
 for k=1:length(dssd_dt_vals)
     if dssd_dt_vals(k) > 0
-        % Positive (offshore): scale from light red to dark red
-        intensity = min(dssd_dt_vals(k) / max(dssd_dt_vals), 1);
-        colors(k,:) = [intensity 0.2 0.2];  % red
+        % Positive (offshore): scale from 0.5 to 1.0 red
+        intensity = dssd_dt_vals(k) / max_offshore;
+        colors(k,:) = [0.5 + 0.5*intensity, 0.0, 0.0];  % red scale
     else
-        % Negative (recovery): scale from light blue to dark blue
-        intensity = min(abs(dssd_dt_vals(k)) / max(abs(dssd_dt_vals)), 1);
-        colors(k,:) = [0.2 0.2 intensity];  % blue
+        % Negative (recovery): scale from 0.5 to 1.0 blue
+        intensity = abs(dssd_dt_vals(k)) / max_recovery;
+        colors(k,:) = [0.0, 0.0, 0.5 + 0.5*intensity];  % blue scale
     end
 end
 
 % Plot bars with colors
 dssd_dates_plot = datetime(dssd_survey_dates, 'convertfrom', 'datenum');
-bar(dssd_dates_plot, dssd_dt_vals * 100, 'facecolor', 'flat', 'edgecolor', 'none');
-ax2.CData = colors;
+scatter(dssd_dates_plot, dssd_dt_vals * 100, 100, colors, 'filled', 'o', ...
+    'markeredgecolor', 'black', 'linewidth', 1.5);
+hold on
+plot(dssd_dates_plot, dssd_dt_vals * 100, 'color', [0.5 0.5 0.5], 'linewidth', 1);
 hold on
 plot(datetime(survey_dates,'convertfrom','datenum'), zeros(size(survey_dates)), 'k-', ...
     'linewidth', 1.5)
 grid on
-ylabel('dSSD/dt (cm/day)', 'fontsize', 14)
-xlabel('Survey Date', 'fontsize', 14)
-title('Rate of Sand Deposition/Erosion (dSSD/dt)', 'fontsize', 16, 'fontweight', 'bold')
+ylabel('dSSD/dt (cm/day)', 'fontsize', 14, 'interpreter', 'tex')
+xlabel('Survey Date', 'fontsize', 14, 'interpreter', 'tex')
+title('Rate of Sand Deposition/Erosion (dSSD/dt)', 'fontsize', 16, 'fontweight', 'bold', 'interpreter', 'tex')
 set(gca, 'fontsize', 12)
 set(ax2, 'position', [0.1 0.1 0.85 0.4])
 
-% Add legend for color coding
-legend_red = patch([NaN NaN], [NaN NaN], [0.8 0.2 0.2]);
-legend_blue = patch([NaN NaN], [NaN NaN], [0.2 0.2 0.8]);
-legend([legend_red legend_blue], 'Offshore Transport', 'Beach Recovery', ...
-    'location', 'bestoutside', 'fontsize', 11);
+% Set identical x-axis limits between panels (first to last survey)
+x_lim = [datetime(survey_dates(1),'convertfrom','datenum') datetime(survey_dates(end),'convertfrom','datenum')];
+set(ax1, 'xlim', x_lim)
+set(ax2, 'xlim', x_lim)
+
+% Add legend inside Panel B in top right corner
+legend_red = patch([NaN NaN], [NaN NaN], [1.0 0.0 0.0]);
+legend_blue = patch([NaN NaN], [NaN NaN], [0.0 0.0 1.0]);
+legend([legend_red legend_blue], 'Net Offshore Transport (Erosion)', 'Net Onshore Transport (Accretion)', ...
+    'location', 'northeast', 'fontsize', 11, 'box', 'on');
 
 makepng('SSDDynamics_1_TimeSeries.png')
 
@@ -201,45 +211,63 @@ figure('position',[50 100 1000 900]);
 % Plot SSD vs dSSD/dt as trajectory
 % Color by time progression
 time_progress = 1:length(ssd_vals);
-scatter(ssd_vals(1:end-1), dssd_dt_vals*100, 80, time_progress(1:end-1), ...
-    'filled', 'marker', 'o', 'cmap', 'jet');
+
+% Add zero reference lines FIRST (before plotting data)
+plot(xlim, [0 0], 'k--', 'linewidth', 1.5)
+plot([0 0], ylim, 'k--', 'linewidth', 1.5)
 hold on
-% Draw connecting lines
-plot(ssd_vals(1:end-1), dssd_dt_vals*100, '-', 'color', [0.5 0.5 0.5], ...
-    'linewidth', 1.5, 'alpha', 0.5);
-% Mark endpoints
-plot(ssd_vals(1), 0, 's', 'markersize', 12, 'markerfacecolor', 'green', ...
-    'markeredgecolor', 'darkgreen', 'linewidth', 2, 'displayname', 'Start');
-plot(ssd_vals(end), dssd_dt_vals(end)*100, '^', 'markersize', 12, ...
-    'markerfacecolor', 'red', 'markeredgecolor', 'darkred', 'linewidth', 2, ...
-    'displayname', 'End');
+
+% Now plot the scatter and trajectory
+s = scatter(ssd_vals(1:end-1), dssd_dt_vals*100, 80, time_progress(1:end-1), ...
+    'filled', 'marker', 'o');
+s.CData = time_progress(1:end-1);
+colormap(gca, 'jet');
+hold on
+% Draw connecting lines colored by source point
+for k=1:length(ssd_vals)-2
+    % Get the jet colormap color for this point
+    color_idx = round((time_progress(k) - min(time_progress)) / (max(time_progress) - min(time_progress)) * 255 + 1);
+    color_idx = max(1, min(255, color_idx));  % Clamp to valid range
+    jet_colors = jet(255);
+    line_color = jet_colors(color_idx, :);
+    plot([ssd_vals(k) ssd_vals(k+1)], [dssd_dt_vals(k)*100 dssd_dt_vals(k+1)*100], ...
+        'color', line_color, 'linewidth', 1.5);
+end
 
 grid on
-xlabel('SSD - Cumulative Offshore Transport (m)', 'fontsize', 14)
-ylabel('dSSD/dt - Rate of Change (cm/day)', 'fontsize', 14)
-title('Phase Plane: Beach State Dynamics', 'fontsize', 16, 'fontweight', 'bold')
+xlabel('SSD - Cumulative Offshore Transport (m)', 'fontsize', 14, 'interpreter', 'tex')
+ylabel('dSSD/dt - Rate of Change (cm/day)', 'fontsize', 14, 'interpreter', 'tex')
+title('Phase Plane: Beach State Dynamics', 'fontsize', 16, 'fontweight', 'bold', 'interpreter', 'tex')
 set(gca, 'fontsize', 12)
 
-% Add zero reference lines
-plot(xlim, [0 0], 'k--', 'linewidth', 1.5, 'alpha', 0.5, 'displayname', 'Equilibrium')
+% Move x-axis to bottom (conventional plot)
 ax = gca;
-ax.XAxisLocation = 'origin';
+ax.XAxisLocation = 'bottom';
 
-% Colorbar
+% Colorbar with actual survey dates (finer ticks)
 cb = colorbar;
-cb.Label.String = 'Time Progression (survey index)';
+% Set colorbar ticks to show more survey dates
+num_surveys = length(survey_dates) - 1;
+% Use up to 8 ticks, but not more than available surveys
+num_ticks = min(8, num_surveys);
+cbar_tick_indices = round(linspace(1, num_surveys, num_ticks));
+cbar_labels = datestr(survey_dates(cbar_tick_indices));
+cb.Ticks = linspace(1, num_surveys, num_ticks);
+cb.TickLabels = cellstr(cbar_labels);
+cb.TickLabels = cellstr(cbar_labels);
+cb.Label.String = 'Survey Date';
 cb.Label.FontSize = 12;
+cb.Label.Interpreter = 'tex';
 
-% Add legend
-legend('location', 'bestoutside', 'fontsize', 11);
-
-% Annotate quadrants
-text(ax.XLim(2)*0.7, ax.YLim(2)*0.7, 'Offshore \& Accelerating', ...
-    'fontsize', 11, 'color', [0.5 0 0], 'fontweight', 'bold', 'alpha', 0.5)
-text(ax.XLim(2)*0.7, ax.YLim(1)*0.7, 'Offshore \& Decelerating', ...
-    'fontsize', 11, 'color', [0 0 0.5], 'fontweight', 'bold', 'alpha', 0.5)
-text(ax.XLim(1)*0.7, ax.YLim(1)*0.7, 'Recovery \& Accelerating', ...
-    'fontsize', 11, 'color', [0 0.5 0], 'fontweight', 'bold', 'alpha', 0.5)
+% Annotate quadrants (fix backslash rendering)
+text(ax.XLim(2)*0.7, ax.YLim(2)*0.7, 'Offshore & Accelerating', ...
+    'fontsize', 11, 'color', [0.5 0 0], 'fontweight', 'bold', 'interpreter', 'tex')
+text(ax.XLim(2)*0.7, ax.YLim(1)*0.7, 'Offshore & Decelerating', ...
+    'fontsize', 11, 'color', [0 0 0.5], 'fontweight', 'bold', 'interpreter', 'tex')
+text(ax.XLim(1)*0.7, ax.YLim(1)*0.7, 'Recovery & Accelerating', ...
+    'fontsize', 11, 'color', [0 0.5 0], 'fontweight', 'bold', 'interpreter', 'tex')
+text(ax.XLim(1)*0.7, ax.YLim(2)*0.7, 'Recovery & Decelerating', ...
+    'fontsize', 11, 'color', [0.5 0.5 0], 'fontweight', 'bold', 'interpreter', 'tex')
 
 makepng('SSDDynamics_2_PhasePlane.png')
 
@@ -264,15 +292,17 @@ if wave_data_available
     
     % Panel A: dSSD/dt vs Mean Hs
     subplot(1,2,1)
-    % Color by sign of dSSD/dt (red=offshore, blue=recovery)
+    % Color by sign of dSSD/dt with brighter colors (red=offshore, blue=recovery)
     colors_forcing = zeros(length(dssd_dt_vals), 3);
+    max_offshore = max(dssd_dt_vals);
+    max_recovery = max(abs(dssd_dt_vals));
     for k=1:length(dssd_dt_vals)
         if dssd_dt_vals(k) > 0
-            intensity = min(dssd_dt_vals(k) / max(dssd_dt_vals), 1);
-            colors_forcing(k,:) = [intensity 0.2 0.2];
+            intensity = dssd_dt_vals(k) / max_offshore;
+            colors_forcing(k,:) = [0.5 + 0.5*intensity, 0.0, 0.0];  % red scale
         else
-            intensity = min(abs(dssd_dt_vals(k)) / max(abs(dssd_dt_vals)), 1);
-            colors_forcing(k,:) = [0.2 0.2 intensity];
+            intensity = abs(dssd_dt_vals(k)) / max_recovery;
+            colors_forcing(k,:) = [0.0, 0.0, 0.5 + 0.5*intensity];  % blue scale
         end
     end
     
@@ -283,16 +313,21 @@ if wave_data_available
     % Add trend line
     p = polyfit(mean_Hs, dssd_dt_vals*100, 1);
     Hs_fit = linspace(min(mean_Hs), max(mean_Hs), 100);
-    plot(Hs_fit, polyval(p, Hs_fit), 'k--', 'linewidth', 2.5, 'alpha', 0.7, ...
-        'displayname', sprintf('Trend: slope = %.3f cm/day per m Hs', p(1)));
+    plot(Hs_fit, polyval(p, Hs_fit), 'k--', 'linewidth', 2.5);
     
-    plot(xlim, [0 0], 'k-', 'linewidth', 1.5, 'alpha', 0.5)
+    % Add trend label as text
+    y_text = max(get(gca,'ylim')) * 0.9;
+    text(min(get(gca,'xlim')) + 0.05*(max(get(gca,'xlim'))-min(get(gca,'xlim'))), y_text, ...
+        sprintf('Slope = %.3f cm/day per m H_s', p(1)), 'fontsize', 11, ...
+        'fontweight', 'bold', 'interpreter', 'tex', 'backgroundcolor', 'white', ...
+        'edgecolor', 'black', 'margin', 5)
+    
+    plot(xlim, [0 0], 'k-', 'linewidth', 1.5)
     grid on
-    xlabel('Mean Hs During Interval (m)', 'fontsize', 13)
-    ylabel('dSSD/dt - Response Rate (cm/day)', 'fontsize', 13)
-    title('Forcing Response: Mean Wave Height vs SSD Rate', 'fontsize', 14, 'fontweight', 'bold')
+    xlabel('Mean H_s During Interval (m)', 'fontsize', 13, 'interpreter', 'tex')
+    ylabel('dSSD/dt - Response Rate (cm/day)', 'fontsize', 13, 'interpreter', 'tex')
+    title('Forcing Response: Mean Wave Height vs SSD Rate', 'fontsize', 14, 'fontweight', 'bold', 'interpreter', 'tex')
     set(gca, 'fontsize', 11)
-    legend('location', 'bestoutside', 'fontsize', 10)
     
     % Panel B: dSSD/dt vs Max Hs
     subplot(1,2,2)
@@ -303,16 +338,27 @@ if wave_data_available
     % Add trend line
     p2 = polyfit(max_Hs, dssd_dt_vals*100, 1);
     Hs_fit2 = linspace(min(max_Hs), max(max_Hs), 100);
-    plot(Hs_fit2, polyval(p2, Hs_fit2), 'k--', 'linewidth', 2.5, 'alpha', 0.7, ...
-        'displayname', sprintf('Trend: slope = %.3f cm/day per m Hs', p2(1)));
+    plot(Hs_fit2, polyval(p2, Hs_fit2), 'k--', 'linewidth', 2.5);
     
-    plot(xlim, [0 0], 'k-', 'linewidth', 1.5, 'alpha', 0.5)
+    % Add trend label as text
+    y_text2 = max(get(gca,'ylim')) * 0.9;
+    text(min(get(gca,'xlim')) + 0.05*(max(get(gca,'xlim'))-min(get(gca,'xlim'))), y_text2, ...
+        sprintf('Slope = %.3f cm/day per m H_s', p2(1)), 'fontsize', 11, ...
+        'fontweight', 'bold', 'interpreter', 'tex', 'backgroundcolor', 'white', ...
+        'edgecolor', 'black', 'margin', 5)
+    
+    plot(xlim, [0 0], 'k-', 'linewidth', 1.5)
     grid on
-    xlabel('Max Hs During Interval (m)', 'fontsize', 13)
-    ylabel('dSSD/dt - Response Rate (cm/day)', 'fontsize', 13)
-    title('Forcing Response: Peak Wave Height vs SSD Rate', 'fontsize', 14, 'fontweight', 'bold')
+    xlabel('Max H_s During Interval (m)', 'fontsize', 13, 'interpreter', 'tex')
+    ylabel('dSSD/dt - Response Rate (cm/day)', 'fontsize', 13, 'interpreter', 'tex')
+    title('Forcing Response: Peak Wave Height vs SSD Rate', 'fontsize', 14, 'fontweight', 'bold', 'interpreter', 'tex')
     set(gca, 'fontsize', 11)
-    legend('location', 'bestoutside', 'fontsize', 10)
+    
+    % Add single legend describing colors (at bottom, applies to both subplots)
+    legend_red = patch([NaN NaN], [NaN NaN], [1.0 0.0 0.0]);
+    legend_blue = patch([NaN NaN], [NaN NaN], [0.0 0.0 1.0]);
+    legend([legend_red legend_blue], 'Net Offshore Transport (Erosion)', 'Net Onshore Transport (Accretion)', ...
+        'location', 'south', 'fontsize', 10, 'box', 'on');
     
 else
     % Placeholder if wave data unavailable

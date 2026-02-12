@@ -1,4 +1,4 @@
-# Paper Figure Generation Guide
+# Paper 1 Figure Generation Guide
 
 ## Overview
 This guide outlines the structure, data requirements, and existing code resources for creating 8 main publication figures plus 10 supplemental figures for your depth-partitioned beach recovery paper.

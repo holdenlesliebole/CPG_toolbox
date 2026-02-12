@@ -114,8 +114,8 @@ legend([p1, p2], 'location', 'northeast', 'fontsize', 12);
 % Add horizontal line showing seasonal change
 meanF_5m = nanmean(F_5m);
 meanF_7m = nanmean(F_7m);
-plot(t_series, meanF_5m*ones(size(t_series)), '--', 'color', [0.2 0.4 0.8], 'linewidth', 1, 'alpha', 0.7);
-plot(t_series, meanF_7m*ones(size(t_series)), '--', 'color', [0.8 0.4 0.2], 'linewidth', 1, 'alpha', 0.7);
+plot(t_series, meanF_5m*ones(size(t_series)), '--', 'color', [0.2 0.4 0.8], 'linewidth', 1);
+plot(t_series, meanF_7m*ones(size(t_series)), '--', 'color', [0.8 0.4 0.2], 'linewidth', 1);
 
 text(DateEnd - 5, meanF_5m, sprintf('Mean 5m: %.1f', meanF_5m), ...
     'fontsize', 10, 'color', [0.2 0.4 0.8], 'fontweight', 'bold', 'horizontalalignment', 'right');
@@ -147,7 +147,7 @@ grid on;
 
 % Add interpretation
 text(DateStart + 15, max(tau_b_5m)*1.05, '← MOBILE ZONE', ...
-    'fontsize', 12, 'fontweight', 'bold', 'color', 'red', 'BackgroundColor', 'lightyellow');
+    'fontsize', 12, 'fontweight', 'bold', 'color', 'red', 'BackgroundColor', 'yellow');
 
 %% PANEL C: ORBITAL VELOCITY AMPLITUDE
 ax3 = subplot(3, 1, 3);
@@ -168,7 +168,7 @@ grid on;
 % Add interpretation
 text(DateStart + 15, max(U_b_5m*100)*0.95, 'Shoaling increases motion → enhanced stress', ...
     'fontsize', 11, 'fontweight', 'bold', 'color', [0.2 0.4 0.8], ...
-    'BackgroundColor', 'lightyellow', 'EdgeColor', 'black', 'Margin', 3);
+    'BackgroundColor', 'yellow', 'EdgeColor', 'black', 'Margin', 3);
 
 %% SAVE
 set(gcf, 'position', [100 100 1500 1100]);

@@ -39,3 +39,4 @@ plot(datenum(xt),C*esum,'r:','linewidth',2,....
 set(gca,'xlim',[datenum(xt(1)) datenum(xt(end))])
 yyaxis right
 set(gca,'xlim',[datenum(xt(1)) datenum(xt(end))])
+makepng('TBR23MeanElevChange.png')

@@ -118,6 +118,15 @@ valid_idx = ~isnan(Z_baseline);
 X_baseline = X_baseline(valid_idx);
 Z_baseline = Z_baseline(valid_idx);
 
+% Sort by X and remove duplicates (keep mean Z for duplicate X values)
+[X_baseline, sort_idx] = sort(X_baseline);
+Z_baseline = Z_baseline(sort_idx);
+
+% Remove duplicate X values by averaging corresponding Z values
+[X_unique, ~, idx_map] = unique(X_baseline, 'stable');
+Z_baseline = accumarray(idx_map, Z_baseline, [], @nanmean);
+X_baseline = X_unique;
+
 % Interpolate baseline
 X_interp = linspace(0, min(max(X_baseline), XCross_max), NumSubTrans);
 Z_baseline_interp = interp1(X_baseline, Z_baseline, X_interp, 'linear', NaN);
@@ -143,6 +152,16 @@ for n = 2:length(SurveyDates)
     if sum(valid_idx) > 10
         X_all = X_all(valid_idx);
         Z_all = Z_all(valid_idx);
+        
+        % Sort by X and remove duplicates (keep mean Z for duplicate X values)
+        [X_all, sort_idx] = sort(X_all);
+        Z_all = Z_all(sort_idx);
+        
+        % Remove duplicate X values by averaging corresponding Z values
+        [X_unique, ~, idx_map] = unique(X_all, 'stable');
+        Z_all = accumarray(idx_map, Z_all, [], @nanmean);
+        X_all = X_unique;
+        
         Z_interp = interp1(X_all, Z_all, X_interp, 'linear', NaN);
         
         % Calculate elevation change
@@ -196,6 +215,15 @@ for n = 1:length(SurveyDates)
         X_all = X_all(valid_idx);
         Z_all = Z_all(valid_idx);
         
+        % Sort by X and remove duplicates (keep mean Z for duplicate X values)
+        [X_all, sort_idx] = sort(X_all);
+        Z_all = Z_all(sort_idx);
+        
+        % Remove duplicate X values by averaging corresponding Z values
+        [X_unique, ~, idx_map] = unique(X_all, 'stable');
+        Z_all = accumarray(idx_map, Z_all, [], @nanmean);
+        X_all = X_unique;
+        
         X_interp_s = linspace(max(0, min(X_all)), min(50, max(X_all)), 100);
         Z_interp_s = interp1(X_all, Z_all, X_interp_s, 'linear', NaN);
         
@@ -212,7 +240,11 @@ xlabel('Cross-Shore Distance (m)', 'fontsize', 13, 'fontweight', 'bold');
 ylabel('Elevation (m, NAVD88)', 'fontsize', 13, 'fontweight', 'bold');
 title('(c) Subaerial Profile Evolution (Z > MSL)', 'fontsize', 14, 'fontweight', 'bold');
 set(ax3, 'xlim', [0, 50], 'ylim', [0.5, 4]);
-legend(p3(1:length(SurveyDates)), 'location', 'northwest', 'fontsize', 11);
+% Filter p3 to only include valid graphics objects
+p3_valid = p3(ishandle(p3));
+if ~isempty(p3_valid)
+    legend(p3_valid, 'location', 'northwest', 'fontsize', 11);
+end
 
 %% PANEL D: SUBAQUEOUS PROFILE DETAIL
 ax4 = subplot(2, 2, 4);
@@ -244,6 +276,15 @@ for n = 1:length(SurveyDates)
         valid_idx = ~isnan(Z_all);
         X_all = X_all(valid_idx);
         Z_all = Z_all(valid_idx);
+        
+        % Sort by X and remove duplicates (keep mean Z for duplicate X values)
+        [X_all, sort_idx] = sort(X_all);
+        Z_all = Z_all(sort_idx);
+        
+        % Remove duplicate X values by averaging corresponding Z values
+        [X_unique, ~, idx_map] = unique(X_all, 'stable');
+        Z_all = accumarray(idx_map, Z_all, [], @nanmean);
+        X_all = X_unique;
         
         X_interp_aq = linspace(min(X_all), min(max(X_all), 150), 150);
         Z_interp_aq = interp1(X_all, Z_all, X_interp_aq, 'linear', NaN);
