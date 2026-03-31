@@ -14,8 +14,8 @@ OutputDir = '/Users/holden/Documents/Scripps/Research/toolbox/Figures/';
 if ~exist(OutputDir, 'dir'), mkdir(OutputDir); end
 
 % Date range for detailed analysis
-DateStart = datetime(2022, 10, 1);
-DateEnd = datetime(2023, 10, 31);
+DateStart = datetime(2023,4,1);%datetime(2022, 10, 1);
+DateEnd = datetime(2023,8,31); %datetime(2023, 10, 31);
 
 % Wave data settings
 MopNumber = 582;  % Representative MOP for waves
@@ -521,8 +521,8 @@ ax_info = axes('position', [0.12 0.01 0.76 0.04], 'visible', 'off');
 
 %% SAVE FIGURE
 set(gcf, 'position', [100 100 1600 1200]);
-print(gcf, fullfile(OutputDir, 'Figure_4_WavesVolumesWidth.png'), '-dpng', '-r300');
-fprintf('Saved Figure 4: %s\n', fullfile(OutputDir, 'Figure_4_WavesVolumesWidth.png'));
+print(gcf, fullfile(OutputDir, 'Figure_4_WavesVolumesWidthApr-Oct.png'), '-dpng', '-r300');
+fprintf('Saved Figure 4: %s\n', fullfile(OutputDir, 'Figure_4_WavesVolumesWidthApr-Oct.png'));
 
 %% STATISTICS
 fprintf('\n=== FIGURE 4: WAVE & MORPHODYNAMIC SUMMARY ===\n');

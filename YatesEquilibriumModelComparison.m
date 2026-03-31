@@ -17,7 +17,7 @@
 %            Equilibrium shoreline response: Observations and modeling.
 %            JGR Oceans, 114, C09014.
 %
-% Holden Leslie-Bole & Copilot, Feb 2025
+% Holden Leslie-Bole, Feb 2025
 %--------------------------------------------------------------------------
 
 clear all; close all;
@@ -25,7 +25,7 @@ clear all; close all;
 %% ===== USER SETTINGS =====
 
 % MOP Range to analyze (can be a single MOP or range)
-MopRange = [576 589];  % Example: Torrey Pines area
+MopRange = [582 583];  % Example: Torrey Pines area
 
 % Use mean MOP number for wave data retrieval
 MopNumber = round(mean(MopRange));
@@ -54,26 +54,26 @@ Ludka.Cplus = -1.0;       % Accretion coefficient (E < Eeq)
 % B.3: Asymmetric Recovery Model
 % Models slower recovery by making Cplus time-varying based on recent storm history
 % After large events, recovery is initially slow then speeds up
-Asymmetric.b = 0.06;
-Asymmetric.a = -0.004;
-Asymmetric.Cminus = -1.2;           % Erosion coefficient (same as Ludka)
-Asymmetric.Cplus_base = -0.5;       % Base accretion coefficient (slower than Ludka)
-Asymmetric.Cplus_max = -1.2;        % Max accretion coefficient (matches erosion)
-Asymmetric.tau_recovery = 60;       % Recovery timescale (days)
-Asymmetric.Ethresh_storm = 0.15;    % Storm threshold for triggering slow recovery
+Asymmetric.b = 0.07;                % Match Yates
+Asymmetric.a = -0.0045;             % Match Yates
+Asymmetric.Cminus = -1.38;          % Match Yates erosion
+Asymmetric.Cplus_base = -1.0;       % Initial accretion coefficient (slightly slower than Yates)
+Asymmetric.Cplus_max = -1.3;        % Max accretion coefficient (slightly faster to compensate)
+Asymmetric.tau_recovery = 21;       % Recovery timescale (days) - ~3 weeks
+Asymmetric.Ethresh_storm = 0.10;    % Storm threshold (top ~10% of wave energy)
 
 % B.4: Profile Shape Tracking - track beach slope as state variable
 % Slope affects equilibrium position (steeper beach = narrower equilibrium)
-SlopeModel.b = 0.06;
-SlopeModel.a = -0.004;
-SlopeModel.Cminus = -1.2;
-SlopeModel.Cplus = -1.0;
-SlopeModel.slopeWeight = 5;         % How much slope deviation affects equilibrium (m per unit slope)
-SlopeModel.targetSlope = 0.05;      % Reference beach slope (~1:20)
+SlopeModel.b = 0.07;                % Match Yates
+SlopeModel.a = -0.0045;             % Match Yates
+SlopeModel.Cminus = -1.38;          % Match Yates
+SlopeModel.Cplus = -1.16;           % Match Yates
+SlopeModel.slopeWeight = 50;        % How much slope deviation affects equilibrium (m per unit slope change)
+SlopeModel.targetSlope = 0.08;      % Reference beach slope (~1:12.5, typical for SD beaches)
 
 % B.5: Multi-contour tracking elevations
-MultiContour.elevations = [0.774, 1.344, 1.566];  % MSL, MHW, MHHW (NAVD88)
-MultiContour.labels = {'MSL', 'MHW', 'MHHW'};
+MultiContour.elevations = [0.5, 1.0, 1.5];  % Low, mid, high beach face (NAVD88)
+MultiContour.labels = {'Z=0.5m', 'Z=1.0m', 'Z=1.5m'};
 MultiContour.enabled = true;        % Set false to skip multi-contour analysis
 
 %% ===== LOAD SHORELINE SURVEY DATA FROM SM FILES =====
@@ -124,15 +124,23 @@ for m = MopRange(1):MopRange(2)
                     allMops = [allMops; m];
                     allWidths = [allWidths; min(xWidth)];
                     
-                    % B.4: Extract beach face slope for profile shape tracking
-                    % Estimate slope between MSL and MHW elevations
-                    xMSL = intersections([-50 200], [0.774 0.774], X1D, Z1D);
-                    xMHW = intersections([-50 200], [1.344 1.344], X1D, Z1D);
-                    if ~isempty(xMSL) && ~isempty(xMHW)
-                        dx = min(xMHW) - min(xMSL);
-                        dz = 1.344 - 0.774;  % 0.57m elevation difference
-                        if dx > 0
-                            allSlopes = [allSlopes; dz/dx];
+                    % B.4: Calculate beach face slope using MSL-MHW method
+                    % Same approach as SM2sandbar.m: slope = dZ/dX between MSL and MHW
+                    xl = [X1D(1) X1D(end)];
+                    
+                    % Find MSL (0.774m NAVD88) intersection
+                    xMSL = intersections(xl, [0.774 0.774], X1D, Z1D);
+                    if ~isempty(xMSL); xMSL = min(xMSL); end
+                    
+                    % Find MHW (1.566m NAVD88) intersection  
+                    xMHW = intersections(xl, [1.566 1.566], X1D, Z1D);
+                    if ~isempty(xMHW); xMHW = min(xMHW); end
+                    
+                    % Calculate slope if both intersections found
+                    if ~isempty(xMSL) && ~isempty(xMHW) && xMSL ~= xMHW
+                        beachSlope = (1.566 - 0.774) / abs(xMHW - xMSL);
+                        if beachSlope > 0.02 && beachSlope < 0.25  % Reasonable range
+                            allSlopes = [allSlopes; beachSlope];
                         else
                             allSlopes = [allSlopes; NaN];
                         end
@@ -151,6 +159,7 @@ for m = MopRange(1):MopRange(2)
 end
 
 fprintf('Collected %d beach width observations\n', length(allWidths));
+fprintf('Collected %d slope observations (%d valid)\n', length(allSlopes), sum(~isnan(allSlopes)));
 
 % Remove outliers
 TF = isoutlier(allWidths);
@@ -167,14 +176,27 @@ timeIdx = allDates >= datenum(StartYear,1,1) & allDates <= datenum(EndYear,12,31
 survDateNum = allDates(timeIdx);
 survMop = allMops(timeIdx);
 survWidth = allWidths(timeIdx);
-survSlope = allSlopes(timeIdx);  % B.4: Filtered slopes
+
+% B.4: Filter slopes (handle size mismatch gracefully)
+if length(allSlopes) == length(allDates)
+    survSlope = allSlopes(timeIdx);
+else
+    % Size mismatch - slopes not collected properly, fill with NaN
+    fprintf('Warning: Slope array size mismatch (%d slopes vs %d dates), using NaN\n', ...
+        length(allSlopes), length(allDates));
+    survSlope = NaN(size(survWidth));
+end
 
 % Calculate spatial mean width for each unique survey date
 [uniqueDates, ~, dateGroup] = unique(survDateNum);
 spatialMeanWidth = accumarray(dateGroup, survWidth, [], @(x) mean(x,'omitnan'));
 
 % B.4: Calculate spatial mean slope for each survey date
-spatialMeanSlope = accumarray(dateGroup, survSlope, [], @(x) mean(x,'omitnan'));
+if ~all(isnan(survSlope))
+    spatialMeanSlope = accumarray(dateGroup, survSlope, [], @(x) mean(x,'omitnan'));
+else
+    spatialMeanSlope = NaN(size(spatialMeanWidth));
+end
 
 % Remove dates with NaN mean widths
 validIdx = ~isnan(spatialMeanWidth);
@@ -438,16 +460,29 @@ R2 = Models(1).R2;
 
 %% ===== PLOT RESULTS =====
 
-figure('Position', [50 50 1200 900], 'Color', 'w');
+% Create output folder for figures
+figDir = sprintf('EquilibriumModel_Figs_MOP%d-%d', MopRange(1), MopRange(2));
+if ~exist(figDir, 'dir')
+    mkdir(figDir);
+end
+
+fig1 = figure('Position', [50 50 1200 900], 'Color', 'w');
 
 % --- Panel 1: Wave Energy Time Series ---
-subplot(4,1,1);
-plot(wavetime, E, 'b-', 'LineWidth', 0.5);
-hold on;
+ax1 = subplot(4,1,1);
 survDT = datetime(uniqueDates, 'ConvertFrom', 'datenum', 'TimeZone', 'America/Los_Angeles');
-for ns = 1:nSurveys
-    plot([survDT(ns) survDT(ns)], [0 max(E)], 'k--', 'LineWidth', 0.5);
-end
+
+% Plot wave energy as filled area for better visibility
+area(wavetime, E, 'FaceColor', [0.7 0.85 1], 'EdgeColor', 'b', 'LineWidth', 0.3);
+hold on;
+
+% Mark survey dates with scatter instead of vertical lines (faster rendering)
+% Ensure unique timestamps for interp1
+[waveTimeUnique, uniqueIdx] = unique(datenum(wavetime));
+Eunique = E(uniqueIdx);
+survTimeInWave = interp1(waveTimeUnique, Eunique, uniqueDates, 'nearest', 'extrap');
+scatter(survDT, survTimeInWave, 10, 'r', 'filled', 'MarkerFaceAlpha', 0.5);
+
 ylabel('Wave Energy (m²)');
 title(sprintf('MOP %s Wave Energy (Hs/4)² and Survey Dates', stn));
 xlim([survDT(1) survDT(end)]);
@@ -455,30 +490,24 @@ grid on;
 legend('E = (Hs/4)²', 'Survey Dates', 'Location', 'northwest');
 
 % --- Panel 2: Beach Width - Observed vs Modeled ---
-subplot(4,1,2);
+ax2 = subplot(4,1,2);
 hold on;
 
-% Plot continuous model trajectories for all models
+% Plot continuous model trajectories (all models)
 for m = 1:nModels
-    plot(Models(m).allModelTime, Models(m).allModelWidth, '-', ...
-        'Color', Models(m).color, 'LineWidth', 1, ...
-        'DisplayName', sprintf('%s Model', Models(m).name));
+    if ~all(isnan(Models(m).allModelWidth))
+        plot(Models(m).allModelTime, Models(m).allModelWidth, '-', ...
+            'Color', Models(m).color, 'LineWidth', 1, ...
+            'DisplayName', sprintf('%s', Models(m).name));
+    end
 end
 
 % Plot observed survey widths
-plot(survDT, observed, 'ko', 'MarkerSize', 3, 'MarkerFaceColor', 'k', ...
+plot(survDT, observed, 'k.-', 'MarkerSize', 4, 'LineWidth', 0.5, ...
     'DisplayName', 'Observed');
 
-% Plot model predictions at survey times
-for m = 1:nModels
-    plot(survDT, Models(m).modelWidth, 's', 'MarkerSize', 2, ...
-        'Color', Models(m).color, 'MarkerFaceColor', Models(m).color, ...
-        'HandleVisibility', 'off');
-end
-
 % Plot mean shoreline
-plot([survDT(1) survDT(end)], [meanS meanS], 'k--', 'LineWidth', 1.5, ...
-    'DisplayName', sprintf('Mean Shoreline (%.1fm)', meanS));
+yline(meanS, 'k--', 'LineWidth', 1.5, 'DisplayName', sprintf('Mean (%.1fm)', meanS));
 
 ylabel(sprintf('%s Beach Width (m)', ShorelineElev));
 title(sprintf('Equilibrium Models vs Observed Shoreline (MOPs %d-%d)', ...
@@ -488,16 +517,17 @@ grid on;
 legend('Location', 'best');
 
 % --- Panel 3: Model Error (Predicted - Observed) ---
-subplot(4,1,3);
+ax3 = subplot(4,1,3);
 hold on;
-barWidth = 0.25;
-barOffsets = linspace(-0.3, 0.3, nModels);
+
+% Use lines instead of bars for cleaner rendering
 for m = 1:nModels
-    bar(survDT + days(barOffsets(m)*5), Models(m).divergence, barWidth, ...
-        'FaceColor', Models(m).color, 'EdgeColor', Models(m).color, 'FaceAlpha', 0.7, ...
-        'DisplayName', Models(m).name);
+    if ~all(isnan(Models(m).divergence))
+        plot(survDT, Models(m).divergence, '.-', 'Color', Models(m).color, ...
+            'LineWidth', 1, 'MarkerSize', 4, 'DisplayName', Models(m).name);
+    end
 end
-plot([survDT(1) survDT(end)], [0 0], 'k-', 'LineWidth', 1.5, 'HandleVisibility', 'off');
+yline(0, 'k-', 'LineWidth', 1.5, 'HandleVisibility', 'off');
 ylabel('Error (m)');
 title('Model Error (Predicted - Observed)');
 legend('Location', 'best');
@@ -505,13 +535,15 @@ xlim([survDT(1) survDT(end)]);
 grid on;
 
 % --- Panel 4: Accumulated Divergence ---
-subplot(4,1,4);
+ax4 = subplot(4,1,4);
 hold on;
 for m = 1:nModels
-    plot(survDT, Models(m).accumDivergence, '-', 'Color', Models(m).color, ...
-        'LineWidth', 2, 'DisplayName', sprintf('%s (RMSE=%.1fm)', Models(m).name, Models(m).RMSE));
+    if ~all(isnan(Models(m).accumDivergence))
+        plot(survDT, Models(m).accumDivergence, '-', 'Color', Models(m).color, ...
+            'LineWidth', 2, 'DisplayName', sprintf('%s (RMSE=%.1fm)', Models(m).name, Models(m).RMSE));
+    end
 end
-plot([survDT(1) survDT(end)], [0 0], 'k-', 'LineWidth', 1, 'HandleVisibility', 'off');
+yline(0, 'k-', 'LineWidth', 1, 'HandleVisibility', 'off');
 ylabel('Accumulated Error (m)');
 xlabel('Time');
 title('Accumulated Model Divergence from Observations');
@@ -519,31 +551,34 @@ xlim([survDT(1) survDT(end)]);
 grid on;
 legend('Location', 'best');
 
+% Link x-axes for synchronized zooming
+linkaxes([ax1 ax2 ax3 ax4], 'x');
+
 % Add annotation with model parameters
-annotation('textbox', [0.01 0.01 0.24 0.07], ...
-    'String', sprintf('Yates: a=%.4f, b=%.2f, C⁺=%.2f, C⁻=%.2f', ...
+annotation('textbox', [0.01 0.01 0.32 0.06], ...
+    'String', sprintf('Yates: a=%.4f, b=%.2f, C+=%.2f, C-=%.2f', ...
     Yates.a, Yates.b, Yates.Cplus, Yates.Cminus), ...
     'FontSize', 7, 'BackgroundColor', 'w', 'EdgeColor', modelColors{1});
-annotation('textbox', [0.26 0.01 0.24 0.07], ...
-    'String', sprintf('Ludka: a=%.4f, b=%.2f, C⁺=%.2f, C⁻=%.2f', ...
+annotation('textbox', [0.34 0.01 0.32 0.06], ...
+    'String', sprintf('Ludka: a=%.4f, b=%.2f, C+=%.2f, C-=%.2f', ...
     Ludka.a, Ludka.b, Ludka.Cplus, Ludka.Cminus), ...
     'FontSize', 7, 'BackgroundColor', 'w', 'EdgeColor', modelColors{2});
-annotation('textbox', [0.51 0.01 0.24 0.07], ...
-    'String', sprintf('Asymm: τ=%.0fd, C⁺base=%.2f', ...
-    Asymmetric.tau_recovery, Asymmetric.Cplus_base), ...
+annotation('textbox', [0.67 0.01 0.32 0.06], ...
+    'String', sprintf('Asymmetric: tau=%.0fd, C+base=%.2f, C+max=%.2f', ...
+    Asymmetric.tau_recovery, Asymmetric.Cplus_base, Asymmetric.Cplus_max), ...
     'FontSize', 7, 'BackgroundColor', 'w', 'EdgeColor', modelColors{3});
-annotation('textbox', [0.76 0.01 0.23 0.07], ...
-    'String', sprintf('Slope: wt=%.0f, target=%.2f', ...
-    SlopeModel.slopeWeight, SlopeModel.targetSlope), ...
-    'FontSize', 7, 'BackgroundColor', 'w', 'EdgeColor', modelColors{4});
 
 % Adjust spacing
 sgtitle(sprintf('Equilibrium Model Comparison: MOPs %d-%d (%d-%d)', ...
     MopRange(1), MopRange(2), StartYear, EndYear), 'FontSize', 14, 'FontWeight', 'bold');
 
+% Save figure (PNG only)
+drawnow;
+exportgraphics(fig1, fullfile(figDir, 'Fig1_ModelComparison.png'), 'Resolution', 150);
+
 %% ===== FIGURE 2: Scatter Plot and Error Distribution =====
 
-figure('Position', [100 100 1400 450], 'Color', 'w');
+fig2 = figure('Position', [100 100 1400 450], 'Color', 'w');
 
 % --- Panel 1: Scatter plot for all models ---
 subplot(1,3,1);
@@ -552,7 +587,9 @@ hold on;
 % Get axis limits from all data
 allPred = [];
 for m = 1:nModels
-    allPred = [allPred; Models(m).modelWidth];
+    if any(~isnan(Models(m).modelWidth))
+        allPred = [allPred; Models(m).modelWidth];
+    end
 end
 minVal = min([min(observed) min(allPred)]) - 5;
 maxVal = max([max(observed) max(allPred)]) + 5;
@@ -582,8 +619,10 @@ subplot(1,3,2);
 hold on;
 edges = linspace(-20, 20, 21);
 for m = 1:nModels
-    histogram(Models(m).divergence, edges, 'FaceColor', Models(m).color, ...
-        'FaceAlpha', 0.4, 'EdgeColor', Models(m).color, 'DisplayName', Models(m).name);
+    if any(~isnan(Models(m).divergence))
+        histogram(Models(m).divergence, edges, 'FaceColor', Models(m).color, ...
+            'FaceAlpha', 0.4, 'EdgeColor', Models(m).color, 'DisplayName', Models(m).name);
+    end
 end
 xline(0, 'k-', 'LineWidth', 2, 'HandleVisibility', 'off');
 xlabel('Model Error (m)');
@@ -594,25 +633,26 @@ grid on;
 
 % --- Panel 3: Skill comparison bar chart ---
 subplot(1,3,3);
-metrics = zeros(3, nModels);
-for m = 1:nModels
+nModelsToPlot = nModels;
+metrics = zeros(3, nModelsToPlot);
+for m = 1:nModelsToPlot
     metrics(1, m) = Models(m).RMSE;
     metrics(2, m) = Models(m).MAE;
     metrics(3, m) = abs(Models(m).bias);
 end
 b = bar(metrics);
-for m = 1:nModels
+for m = 1:nModelsToPlot
     b(m).FaceColor = Models(m).color;
 end
 set(gca, 'XTickLabel', {'RMSE', 'MAE', '|Bias|'});
 ylabel('Error (m)');
 title('Model Skill Comparison');
-legend({Models.name}, 'Location', 'best');
+legend({Models(1:nModelsToPlot).name}, 'Location', 'best');
 grid on;
 
 % Add R² values as text
 r2str = '';
-for m = 1:nModels
+for m = 1:nModelsToPlot
     r2str = [r2str sprintf('%s=%.3f  ', Models(m).name, Models(m).R2)];
 end
 text(0.5, 0.95, ['R²: ' r2str], 'Units', 'normalized', 'FontSize', 9, 'HorizontalAlignment', 'center');
@@ -620,9 +660,13 @@ text(0.5, 0.95, ['R²: ' r2str], 'Units', 'normalized', 'FontSize', 9, 'Horizont
 sgtitle(sprintf('Model Skill Comparison: MOPs %d-%d', MopRange(1), MopRange(2)), ...
     'FontSize', 12, 'FontWeight', 'bold');
 
+% Save figure (PNG only)
+drawnow;
+exportgraphics(fig2, fullfile(figDir, 'Fig2_SkillComparison.png'), 'Resolution', 150);
+
 %% ===== FIGURE 3: Error Evolution Over Time =====
 
-figure('Position', [150 150 1000 400], 'Color', 'w');
+fig3 = figure('Position', [150 150 1000 400], 'Color', 'w');
 
 % Calculate time since start (in years)
 timeSinceStart = years(survDT - survDT(1));
@@ -631,16 +675,20 @@ timeSinceStart = years(survDT - survDT(1));
 subplot(1,2,1);
 hold on;
 for m = 1:nModels
-    scatter(timeSinceStart, abs(Models(m).divergence), 40, ...
-        'MarkerFaceColor', Models(m).color, 'MarkerEdgeColor', Models(m).color, ...
-        'MarkerFaceAlpha', 0.5, 'DisplayName', Models(m).name);
-    % Trend line
-    validTime = ~isnan(abs(Models(m).divergence));
-    p = polyfit(timeSinceStart(validTime), abs(Models(m).divergence(validTime)), 1);
-    xfit = linspace(0, max(timeSinceStart), 100);
-    yfit = polyval(p, xfit);
-    plot(xfit, yfit, '-', 'Color', Models(m).color, 'LineWidth', 2, ...
-        'HandleVisibility', 'off');
+    validDiv = ~isnan(Models(m).divergence);
+    if any(validDiv)
+        scatter(timeSinceStart(validDiv), abs(Models(m).divergence(validDiv)), 40, ...
+            'MarkerFaceColor', Models(m).color, 'MarkerEdgeColor', Models(m).color, ...
+            'MarkerFaceAlpha', 0.5, 'DisplayName', Models(m).name);
+        % Trend line (with enough data)
+        if sum(validDiv) > 2
+            p = polyfit(timeSinceStart(validDiv), abs(Models(m).divergence(validDiv)), 1);
+            xfit = linspace(0, max(timeSinceStart), 100);
+            yfit = polyval(p, xfit);
+            plot(xfit, yfit, '-', 'Color', Models(m).color, 'LineWidth', 2, ...
+                'HandleVisibility', 'off');
+        end
+    end
 end
 xlabel('Years Since Initial Survey');
 ylabel('Absolute Error |Predicted - Observed| (m)');
@@ -652,8 +700,10 @@ legend('Location', 'best');
 subplot(1,2,2);
 hold on;
 for m = 1:nModels
-    plot(timeSinceStart, Models(m).accumDivergence, '-', 'Color', Models(m).color, ...
-        'LineWidth', 2, 'DisplayName', Models(m).name);
+    if ~all(isnan(Models(m).accumDivergence))
+        plot(timeSinceStart, Models(m).accumDivergence, '-', 'Color', Models(m).color, ...
+            'LineWidth', 2, 'DisplayName', Models(m).name);
+    end
 end
 plot([0 max(timeSinceStart)], [0 0], 'k--', 'LineWidth', 1, 'HandleVisibility', 'off');
 xlabel('Years Since Initial Survey');
@@ -664,11 +714,15 @@ grid on;
 
 sgtitle('How Model Error Evolves With Time', 'FontSize', 12, 'FontWeight', 'bold');
 
+% Save figure (PNG only)
+drawnow;
+exportgraphics(fig3, fullfile(figDir, 'Fig3_ErrorEvolution.png'), 'Resolution', 150);
+
 %% ===== FIGURE 4: ERROR DIAGNOSTICS - Seasonal & Conditional Analysis =====
 
 fprintf('\n===== ERROR DIAGNOSTICS =====\n');
 
-figure('Position', [200 100 1400 900], 'Color', 'w');
+fig4 = figure('Position', [200 100 1400 900], 'Color', 'w');
 
 % --- Calculate antecedent wave statistics for each survey ---
 % For each survey, compute wave stats in preceding N days
@@ -877,9 +931,13 @@ grid on;
 sgtitle(sprintf('Error Diagnostics: MOPs %d-%d (%d-%d)', ...
     MopRange(1), MopRange(2), StartYear, EndYear), 'FontSize', 14, 'FontWeight', 'bold');
 
+% Save figure (PNG only)
+drawnow;
+exportgraphics(fig4, fullfile(figDir, 'Fig4_ErrorDiagnostics.png'), 'Resolution', 150);
+
 %% ===== FIGURE 5: Time-Lagged Error Analysis =====
 
-figure('Position', [250 150 1200 500], 'Color', 'w');
+fig5 = figure('Position', [250 150 1200 500], 'Color', 'w');
 
 % --- Panel 1: Error vs cumulative wave energy since last survey ---
 subplot(1,3,1);
@@ -995,6 +1053,10 @@ end
 
 sgtitle('Change Prediction Diagnostics', 'FontSize', 14, 'FontWeight', 'bold');
 
+% Save figure (PNG only)
+drawnow;
+exportgraphics(fig5, fullfile(figDir, 'Fig5_ChangePrediction.png'), 'Resolution', 150);
+
 %% ===== Store diagnostic results =====
 Diagnostics.antecedentEmean = antecedentEmean;
 Diagnostics.antecedentEmax = antecedentEmax;
@@ -1010,25 +1072,27 @@ Diagnostics.eventSkill = eventSkill;
 
 fprintf('\n===== B.4: SLOPE TRACKING ANALYSIS =====\n');
 
-figure('Position', [300 100 1200 500], 'Color', 'w');
+% Only show slope figure if we have valid slope data
+if ~isnan(meanSlope) && sum(~isnan(spatialMeanSlope)) > 5
+    fig6 = figure('Position', [300 100 1200 500], 'Color', 'w');
 
-% --- Panel 1: Observed vs Modeled Slope Time Series ---
-subplot(1,3,1);
-hold on;
+    % --- Panel 1: Observed vs Modeled Slope Time Series ---
+    subplot(1,3,1);
+    hold on;
 
-plot(survDT, spatialMeanSlope, 'ko-', 'MarkerSize', 4, 'MarkerFaceColor', 'k', ...
-    'LineWidth', 1.5, 'DisplayName', 'Observed');
+    plot(survDT, spatialMeanSlope, 'ko-', 'MarkerSize', 4, 'MarkerFaceColor', 'k', ...
+        'LineWidth', 1.5, 'DisplayName', 'Observed');
 
-% Plot SlopeModel's tracked slope (model 4)
-if nModels >= 4
-    plot(survDT, Models(4).modelSlope, '-', 'Color', modelColors{4}, ...
-        'LineWidth', 2, 'DisplayName', 'SlopeModel Tracked');
-end
+    % Plot SlopeModel's tracked slope (model 4)
+    if nModels >= 4 && any(~isnan(Models(4).modelSlope))
+        plot(survDT, Models(4).modelSlope, '-', 'Color', modelColors{4}, ...
+            'LineWidth', 2, 'DisplayName', 'SlopeModel Tracked');
+    end
 
-yline(meanSlope, 'k--', 'LineWidth', 1, 'DisplayName', sprintf('Mean (%.3f)', meanSlope));
-xlabel('Time');
-ylabel('Beach Face Slope');
-title('Beach Slope Evolution');
+    yline(meanSlope, 'k--', 'LineWidth', 1, 'DisplayName', sprintf('Mean (%.3f)', meanSlope));
+    xlabel('Time');
+    ylabel('Beach Face Slope');
+    title('Beach Slope Evolution');
 legend('Location', 'best');
 grid on;
 
@@ -1083,6 +1147,13 @@ title('Observed Slope-Width Relationship');
 grid on;
 
 sgtitle('B.4: Profile Shape (Slope) Tracking', 'FontSize', 14, 'FontWeight', 'bold');
+    
+    % Save figure (PNG only)
+    drawnow;
+    exportgraphics(fig6, fullfile(figDir, 'Fig6_SlopeTracking.png'), 'Resolution', 150);
+else
+    fprintf('Insufficient slope data for Figure 6 (need >5 valid observations)\n');
+end
 
 %% ===== FIGURE 7: B.5 - MULTI-CONTOUR ANALYSIS =====
 
@@ -1285,6 +1356,10 @@ if MultiContour.enabled
     Diagnostics.MultiContour.dates = MultiContourDates;
     Diagnostics.MultiContour.widths = MultiContourWidths;
     Diagnostics.MultiContour.skill = contourSkill;
+    
+    % Save figure (PNG only)
+    drawnow;
+    exportgraphics(gcf, fullfile(figDir, 'Fig7_MultiContour.png'), 'Resolution', 150);
 end
 
 %% ===== SAVE RESULTS =====
@@ -1352,11 +1427,12 @@ outfile = sprintf('EquilibriumModelComparison_MOP%d-%d_%d-%d.mat', ...
     MopRange(1), MopRange(2), StartYear, EndYear);
 save(outfile, 'Results');
 fprintf('\nResults saved to %s\n', outfile);
+fprintf('Figures saved to folder: %s/\n', figDir);
 
 fprintf('\n===== ANALYSIS COMPLETE =====\n');
-fprintf('Model RMSE comparison:\n');
+fprintf('Model RMSE comparison (all models):\n');
 for m = 1:nModels
     fprintf('  %s: %.2f m\n', Models(m).name, Models(m).RMSE);
 end
-[~, bestIdx] = min([Models.RMSE]);
+[~, bestIdx] = min([Models(1:nModels).RMSE]);
 fprintf('Best model: %s\n', Models(bestIdx).name);
